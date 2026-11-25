@@ -1,0 +1,36 @@
+{
+  "name": "dep-radar",
+  "version": "0.1.0",
+  "description": "Zero-backend lockfile blast-radius explorer, transitive weight gravity graph, license & capability risk analyzer for npm, pnpm, Cargo, and uv.",
+  "type": "module",
+  "bin": {
+    "dep-radar": "./bin/dep-radar.js"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build:client": "tsc --noEmit && vite build",
+    "build:cli": "esbuild src/cli/analyze.ts --bundle --platform=node --format=esm --outfile=dist-cli/analyze.mjs",
+    "build": "npm run build:client && npm run build:cli",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "keywords": ["lockfile", "dependencies", "supply-chain", "cargo", "npm", "pnpm", "uv", "visualizer"],
+  "license": "MIT",
+  "dependencies": {
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "esbuild": "^0.24.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
