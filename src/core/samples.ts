@@ -200,3 +200,57 @@ name = "numpy"
 version = "2.2.1"
 source = { registry = "https://pypi.org/simple" }
 `;
+
+export const SAMPLE_PNPM_LOCK = `lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.11
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.0
+      drizzle-orm:
+        specifier: ^0.36.0
+        version: 0.36.4
+
+packages:
+  vite@5.4.11:
+    resolution: {integrity: sha512-vite}
+  rollup@4.27.4:
+    resolution: {integrity: sha512-rollup}
+  esbuild@0.24.0:
+    resolution: {integrity: sha512-esbuild}
+    hasBin: true
+  postcss@8.4.49:
+    resolution: {integrity: sha512-postcss}
+  nanoid@3.3.7:
+    resolution: {integrity: sha512-nanoid}
+  drizzle-orm@0.36.4:
+    resolution: {integrity: sha512-drizzle}
+  pg@8.13.1:
+    resolution: {integrity: sha512-pg}
+  pg-pool@3.7.0:
+    resolution: {integrity: sha512-pgpool}
+  pg-protocol@1.7.0:
+    resolution: {integrity: sha512-pgproto}
+
+snapshots:
+  vite@5.4.11:
+    dependencies:
+      esbuild: 0.24.0
+      postcss: 8.4.49
+      rollup: 4.27.4
+  postcss@8.4.49:
+    dependencies:
+      nanoid: 3.3.7
+  drizzle-orm@0.36.4:
+    dependencies:
+      pg: 8.13.1
+  pg@8.13.1:
+    dependencies:
+      pg-pool: 3.7.0
+      pg-protocol: 1.7.0
+`;
