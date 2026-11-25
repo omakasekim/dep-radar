@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
+  Check,
   Copy,
   Download,
   FileUp,
   Filter,
+  GitCompare,
   GitFork,
   Layers,
+  Pause,
+  Play,
   Radar,
   RotateCcw,
   Search,
@@ -16,6 +20,13 @@ import {
   Undo2,
 } from 'lucide-react';
 import { analyzeLockfile, computeBlastRadius } from './core/lockfileParser.ts';
+import {
+  diffLockfiles,
+  evaluateLicensePolicy,
+  generateDedupeOverrides,
+  SAMPLE_UPGRADED_PACKAGE_LOCK,
+  type LicensePolicyMode,
+} from './core/lockfileDiff.ts';
 import {
   SAMPLE_CARGO_LOCK,
   SAMPLE_PACKAGE_LOCK,
@@ -35,7 +46,7 @@ interface SimPos {
 
 type FilterChip = 'all' | 'direct' | 'duplicates' | 'scripts' | 'copyleft' | 'deep';
 type SampleKey = 'npm' | 'pnpm' | 'cargo' | 'uv' | 'custom';
-type ViewMode = 'gravity' | 'analytics';
+type ViewMode = 'gravity' | 'analytics' | 'diff';
 
 function riskColor(n: DepNode): string {
   if (n.licenseTier === 'strong-copyleft' || n.riskScore >= 45) return '#f43f5e';
@@ -60,6 +71,17 @@ export function App() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [physicsRunning, setPhysicsRunning] = useState(true);
+  const [licensePolicy, setLicensePolicy] = useState<LicensePolicyMode>('strict-permissive');
+  const [copiedOverrides, setCopiedOverrides] = useState(false);
+
+  const policyViolations = useMemo(() => evaluateLicensePolicy(graph, licensePolicy), [graph, licensePolicy]);
+  const dedupeOverrides = useMemo(() => generateDedupeOverrides(graph), [graph]);
+  const prDiffReport = useMemo(() => {
+    const beforeG = analyzeLockfile(SAMPLE_PACKAGE_LOCK, 'package-lock.json');
+    const afterG = analyzeLockfile(SAMPLE_UPGRADED_PACKAGE_LOCK, 'package-lock.json');
+    return diffLockfiles(beforeG, afterG);
+  }, []);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simMapRef = useRef<Map<string, SimPos>>(new Map());
@@ -197,6 +219,7 @@ export function App() {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             const arr = Array.from(simMap.values());
+            if (physicsRunning) {
             for (let i = 0; i < arr.length; i++) {
               const a = arr[i];
               a.vx += -a.x * 0.004;
@@ -243,6 +266,7 @@ export function App() {
               p.vy *= 0.82;
               p.x += p.vx;
               p.y += p.vy;
+            }
             }
 
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -353,7 +377,7 @@ export function App() {
     };
     raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
-  }, [graph, selectedId, blast, filteredIds, prunedIds, cam, viewMode]);
+  }, [graph, selectedId, blast, filteredIds, prunedIds, cam, viewMode, physicsRunning]);
 
   const toWorldCoords = (clientX: number, clientY: number) => {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -483,6 +507,15 @@ export function App() {
             >
               <BarChart3 className="h-3.5 w-3.5" /> Telemetry
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('diff')}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 ${
+                viewMode === 'diff' ? 'bg-sky-500/20 font-semibold text-sky-200' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <GitCompare className="h-3.5 w-3.5" /> PR Diff &amp; Policy
+            </button>
           </div>
 
           <div className="flex rounded-lg border border-slate-700 bg-[#0B0F17] p-0.5 text-xs">
@@ -599,6 +632,14 @@ export function App() {
               className="w-40 rounded-lg border border-slate-700 bg-[#111827] py-1 pl-8 pr-2.5 text-xs text-slate-100"
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setPhysicsRunning((v) => !v)}
+            className="rounded border border-slate-700 bg-[#111827] p-1 text-slate-300 hover:border-amber-500"
+            title={physicsRunning ? 'Freeze gravity physics' : 'Resume gravity physics'}
+          >
+            {physicsRunning ? <Pause className="h-3.5 w-3.5 text-amber-300" /> : <Play className="h-3.5 w-3.5 text-emerald-300" />}
+          </button>
           <button
             type="button"
             onClick={() => setCam({ x: 0, y: 0, zoom: 1 })}
@@ -727,6 +768,113 @@ export function App() {
                 <span className="h-2.5 w-2.5 rounded-full bg-rose-400" /> High Risk / Strong Copyleft
               </span>
               <span className="text-slate-400">· Size = transitive footprint · Pulses = blast chain</span>
+            </div>
+          </div>
+        ) : viewMode === 'diff' ? (
+          <div className="flex-1 space-y-5 overflow-y-auto p-5">
+            {/* License Compliance Policy Gate */}
+            <div className="rounded-xl border border-slate-800 bg-[#111827] p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">Org License Policy Compliance Gate</h2>
+                  <p className="text-[11px] text-slate-400">Evaluate active lockfile (`{graph.projectName}`) against license policy rules.</p>
+                </div>
+                <div className="flex rounded-lg border border-slate-700 bg-[#0B0F17] p-0.5 text-[11px]">
+                  {(
+                    [
+                      { id: 'strict-permissive', label: 'Strict MIT/Apache' },
+                      { id: 'allow-weak-copyleft', label: 'Allow MPL/LGPL' },
+                      { id: 'open', label: 'Open' },
+                    ] as const
+                  ).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setLicensePolicy(p.id)}
+                      className={`rounded px-2 py-1 ${licensePolicy === p.id ? 'bg-amber-500/20 font-semibold text-amber-200' : 'text-slate-400'}`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {policyViolations.length === 0 ? (
+                <div className="rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+                  PASS: All {graph.nodes.length} packages comply with "{licensePolicy}".
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {policyViolations.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(n.id);
+                        setViewMode('gravity');
+                      }}
+                      className="flex w-full items-center justify-between rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 font-mono text-xs text-rose-200 hover:border-rose-400"
+                    >
+                      <span>{n.id}</span>
+                      <span>License: {n.license} ({n.licenseTier})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Duplicate Consolidation Overrides */}
+            <div className="rounded-xl border border-slate-800 bg-[#111827] p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Duplicate Version Consolidation (`package.json` overrides)
+                </h2>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(JSON.stringify({ overrides: dedupeOverrides }, null, 2));
+                      setCopiedOverrides(true);
+                      setTimeout(() => setCopiedOverrides(false), 1500);
+                    } catch {}
+                  }}
+                  className="inline-flex items-center gap-1 rounded border border-slate-700 bg-[#0B0F17] px-2 py-0.5 font-mono text-[10px] text-sky-300"
+                >
+                  {copiedOverrides ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  Copy Overrides
+                </button>
+              </div>
+              <pre className="rounded-lg border border-slate-800 bg-[#0B0F17] p-3 font-mono text-xs text-emerald-200">
+                {Object.keys(dedupeOverrides).length > 0
+                  ? JSON.stringify({ overrides: dedupeOverrides }, null, 2)
+                  : '// Zero duplicate package versions detected!'}
+              </pre>
+            </div>
+
+            {/* PR Lockfile Upgrade Diff (Before vs After Demo) */}
+            <div className="rounded-xl border border-slate-800 bg-[#111827] p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Lockfile PR Diff Preview (`chronos-web-stack` v1 → v2 Upgrade)
+                </h2>
+                <div className="flex gap-2 font-mono text-[11px]">
+                  <span className="text-emerald-300">+{prDiffReport.added.length} added</span>
+                  <span className="text-rose-300">-{prDiffReport.removed.length} removed</span>
+                  <span className="text-sky-300">{prDiffReport.upgraded.length} upgraded</span>
+                  <span className="text-amber-300">{prDiffReport.newScriptPackages.length} new script(s)</span>
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2 font-mono text-xs">
+                {prDiffReport.added.map((n) => (
+                  <div key={n.id} className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-2.5 text-rose-200">
+                    + {n.id} ({n.license}) {n.capabilities.length ? `[${n.capabilities.join(', ')}]` : ''}
+                  </div>
+                ))}
+                {prDiffReport.upgraded.map((u) => (
+                  <div key={u.name} className="rounded-lg border border-sky-500/35 bg-sky-500/10 p-2.5 text-sky-200">
+                    ↑ {u.name}: {u.beforeVersion} → {u.afterVersion}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ) : (
